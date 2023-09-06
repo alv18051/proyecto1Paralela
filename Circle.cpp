@@ -1,6 +1,7 @@
 #include <SDL.h>
 #include <cmath>
 #include "Constants.cpp"
+
 //funciones utriles para crear los circulos 
 class Circle {
 private:

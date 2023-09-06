@@ -1,109 +1,103 @@
 #include <SDL2/SDL.h>
-#include <cstdlib>
-#include <ctime>
-#include <iostream>
-#include <SDL2/SDL_ttf.h>
-#include <cmath>
+#include "Circle.cpp"
+#include "omp.h"
 
+#define BALL_COUNT 1000
 
-const int SCREEN_WIDTH = 640;
-const int SCREEN_HEIGHT = 480;
-const int BALL_RADIUS = 30;
-const float GRAVITY = 200.0f;
-const float BOUNCE_FACTOR = 0.6f;
-const float BALL_COLLISION_FACTOR = 0.8f;
-
-
-//Herramientas para calcular el tiempo
-Uint32 start_time_operations, end_time_operations;
-Uint64 total_time_operations = 0;
-
-Uint32 start_time_collision = SDL_GetTicks();
-struct Ball {
-    int x, y, dx, dy, bounces, radius;
-    Uint8 r, g, b;
-    Uint32 start_time_collision;
-
-};
-
-//verificar colision entre dos bolas
-
-bool useBallCollision(Ball &ball1, Ball &ball2, bool ignoreCollision) {
-    if (ignoreCollision) {
-        return false;
-    }
-    int dx = ball1.x - ball2.x;
-    int dy = ball1.y - ball2.y;
-    int distanceSquared = dx * dx + dy * dy;
-    return distanceSquared <= (ball1.radius + ball2.radius) * (ball1.radius + ball2.radius);
-}
-
-//funcion para dibujar estrellas 
-void drawStar(SDL_Renderer* renderer, int x, int y, int radius) {
-    const int num_points = 5;
-    const double angle = 2 * M_PI / num_points;
-    SDL_Point points[num_points * 2 + 1];
-
-    for (int i = 0; i < num_points * 2; i += 2) {
-        points[i].x = x + radius * cos(i / 2 * angle);
-        points[i].y = y + radius * sin(i / 2 * angle);
-        points[i + 1].x = x + (radius / 2) * cos((i / 2) * angle + angle / 2);
-        points[i + 1].y = y + (radius / 2) * sin((i / 2) * angle + angle / 2);
+int main(int argc, char *argv[]) {
+    int ballCount = BALL_COUNT;
+    if (argc > 1) {
+        ballCount = atoi(argv[1]);
     }
 
-    points[num_points * 2] = points[0];
-    SDL_RenderDrawLines(renderer, points, num_points * 2 + 1);
-}
+    // Inicializar SDL
+    SDL_Init(SDL_INIT_VIDEO);
+
+    // Crear ventana
+    SDL_Window *window = SDL_CreateWindow("Screensaver", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, WINDOW_WIDTH,
+                                          WINDOW_HEIGHT, SDL_WINDOW_SHOWN);
+
+    // Crear renderer
+    SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+
+    // Crear círculos
+    Circle circleArray[ballCount];
+
+    // Esperar evento de salida
+    SDL_Event event;
+    bool quit = false;
+
+    // Inicializar temporizador para FPS
+    Uint32 frameStart, frameTime;
+    int frameCounter = 0;
+    Uint32 frameDelay = 1000 / 120;
+
+    Uint32 fpsTimer = SDL_GetTicks();
+
+    double delta_per_second = 0.0;
+
+    while (!quit) {
+        frameStart = SDL_GetTicks();
+
+        while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_QUIT) {
+                quit = true;
+            }
+        }
+
+        double start = omp_get_wtime();
+        for (int i = 0; i < ballCount; i++) {
+            circleArray[i].move();
+        }
+
+        for (int i = 0; i < ballCount - 1; i++) {
+            for (int j = i + 1; j < ballCount; j++) {
+                circleArray[i].checkCollision(circleArray[j]);
+            }
+        }
+        double end = omp_get_wtime();
+        double delta = end - start;
+        delta_per_second += delta;
 
 
-struct Collision {
-    int id1, id2;
-    Uint32 timestamp;
-};
+        // Limpiar pantalla
+        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+        SDL_RenderClear(renderer);
 
-void ballCollisionManager(Ball &ball1, Ball &ball2) {
-    int dx = ball1.x - ball2.x;
-    int dy = ball1.y - ball2.y;
-    float distance = hypot(dx, dy);
+        // Dibujar círculos
+        for (int i = 0; i < ballCount; i++) {
+            circleArray[i].draw(renderer);
+        }
 
-    if (distance == 0.0f) {
-        return;
+        SDL_RenderPresent(renderer);
+
+        // Calcular tiempo por cuadro y ajustar el delay
+        frameTime = SDL_GetTicks() - frameStart;
+        if (frameDelay > frameTime) {
+            SDL_Delay(frameDelay - frameTime);
+        }
+
+        // Incrementar contador de cuadros
+        frameCounter++;
+
+        // Calcular e imprimir FPS cada segundo
+        if (SDL_GetTicks() - fpsTimer >= 1000) {
+            SDL_Log("FPS: %d, sphere calculation time: %lf", frameCounter, delta_per_second / frameCounter);
+            frameCounter = 0;
+            delta_per_second = 0.0;
+            fpsTimer = SDL_GetTicks();
+        }
     }
-    if (std::isnan(distance)) {
-        std::cerr << "Error: invalid distance value: dx = " << dx << ", dy = " << dy << std::endl;
-        return;
+
+    // limpiar variables
+    for (int i = 0; i < ballCount; i++) {
+        circleArray[i].~Circle();
     }
 
-    float overlap = ball1.radius + ball2.radius - distance;
-    float nx = dx / distance;
-    float ny = dy / distance;
+    // Limpiar recursos
+    SDL_DestroyRenderer(renderer);
+    SDL_DestroyWindow(window);
+    SDL_Quit();
 
-    ball1.x += nx * overlap / 2;
-    ball1.y += ny * overlap / 2;
-    ball2.x -= nx * overlap / 2;
-    ball2.y -= ny * overlap / 2;
-
-    float relativeVelocityX = ball1.dx - ball2.dx;
-    float relativeVelocityY = ball1.dy - ball2.dy;
-    float impulse = (relativeVelocityX * nx + relativeVelocityY * ny) * BALL_COLLISION_FACTOR;
-
-    ball1.dx -= nx * impulse;
-    ball1.dy -= ny * impulse;
-    ball2.dx += nx * impulse;
-    ball2.dy += ny * impulse;
-
-    // Add the size reduction feature for the two balls colliding
-    if (ball1.radius > BALL_RADIUS/2 && ball2.radius > BALL_RADIUS/2) {
-        ball1.radius *= BOUNCE_FACTOR;
-        ball2.radius *= BOUNCE_FACTOR;
-        // Cambiar el color de las bolas cuando colisionan
-        ball1.r = rand() % 256;
-        ball1.g = rand() % 256;
-        ball1.b = rand() % 256;
-        ball2.r = rand() % 256;
-        ball2.g = rand() % 256;
-        ball2.b = rand() % 256;
-    }
-    ball1.start_time_collision = SDL_GetTicks();
-    ball2.start_time_collision = SDL_GetTicks();
+    return 0;
 }
