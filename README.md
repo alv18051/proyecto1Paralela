@@ -13,7 +13,7 @@
 
 "g++ main.cpp Circle.cpp Constants.cpp -o *nombre del ejecutable* -lSDL2 -fopenmp -lm" comando para el programa secuencial
 
-"g++ main_par.cpp Circle.cpp Constants.cpp -o *nombre del ejecutable* -lSDL2 -fopenmp -lm" comando para el programa en paralelo
+"g++ mainpar.cpp Circle.cpp Constants.cpp -o *nombre del ejecutable* -lSDL2 -fopenmp -lm" comando para el programa en paralelo
 
 # Correr el programa
 
